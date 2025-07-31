@@ -1,0 +1,812 @@
+// Note: Ensure the following assets are added to the project:
+// - Splash image at path: assets/splash.png
+// - Sound effect files at paths: assets/sound-click.mp3, assets/sound-post.mp3,
+//   assets/sound-claim.mp3, assets/sound-favorite.mp3, assets/sound-comment.mp3
+// These should be placed in an 'assets' folder in the project directory.
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, Image, TextInput, FlatList, ScrollView, Pressable, Switch, SafeAreaView, Modal, useColorScheme } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Audio } from 'expo-av';
+
+export default function App() {
+  // Theme and appearance
+  const systemColorScheme = useColorScheme();
+  const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
+  // Splash screen state
+  const [showSplash, setShowSplash] = useState(true);
+  // Navigation state
+  const [activeScreen, setActiveScreen] = useState('home');
+  // Current user profile
+  const [currentUser, setCurrentUser] = useState({ name: 'John Doe', avatar: null });
+  // Posts data (feed)
+  const [posts, setPosts] = useState([
+    {
+      id: 1,
+      title: "Spaghetti alle Vongole",
+      description: "Classic Italian pasta with clams, garlic, and parsley.",
+      image: "https://upload.wikimedia.org/wikipedia/commons/7/70/Spaghetti_alle_vongole.jpg",
+      user: "Alice",
+      isFavorite: false,
+      isClaimed: false,
+      claimedBy: null,
+      comments: [
+        { user: "Bob", text: "Looks delicious!" }
+      ]
+    },
+    {
+      id: 2,
+      title: "Homemade Pizza",
+      description: "Cheesy home-baked pizza with fresh basil.",
+      image: "https://upload.wikimedia.org/wikipedia/commons/4/46/Pizza_finished.jpg",
+      user: "Charlie",
+      isFavorite: false,
+      isClaimed: true,
+      claimedBy: "Eve",
+      comments: []
+    },
+    {
+      id: 3,
+      title: "Garden Salad",
+      description: "A fresh mixed salad with seasonal vegetables.",
+      image: null,
+      user: "John Doe",  // current user posted this
+      isFavorite: false,
+      isClaimed: false,
+      claimedBy: null,
+      comments: []
+    }
+  ]);
+  // Modal states
+  const [selectedPostId, setSelectedPostId] = useState(null);
+  const [newPostOpen, setNewPostOpen] = useState(false);
+  // New post form state
+  const [newPostTitle, setNewPostTitle] = useState("");
+  const [newPostDesc, setNewPostDesc] = useState("");
+  // Comment input state (for detail screen)
+  const [commentText, setCommentText] = useState("");
+  // Profile editing state
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [pendingName, setPendingName] = useState(currentUser.name);
+
+  // Sound effects
+  const soundClick = useRef(null);
+  const soundPost = useRef(null);
+  const soundClaim = useRef(null);
+  const soundFavorite = useRef(null);
+  const soundComment = useRef(null);
+
+  // Load sound effects on mount
+  useEffect(() => {
+    const loadSounds = async () => {
+      try {
+        const { sound } = await Audio.Sound.createAsync(require('./assets/sound-click.mp3'));
+        soundClick.current = sound;
+      } catch (e) {
+        console.log("Error loading click sound", e);
+      }
+      try {
+        const { sound } = await Audio.Sound.createAsync(require('./assets/sound-post.mp3'));
+        soundPost.current = sound;
+      } catch (e) {
+        console.log("Error loading post sound", e);
+      }
+      try {
+        const { sound } = await Audio.Sound.createAsync(require('./assets/sound-claim.mp3'));
+        soundClaim.current = sound;
+      } catch (e) {
+        console.log("Error loading claim sound", e);
+      }
+      try {
+        const { sound } = await Audio.Sound.createAsync(require('./assets/sound-favorite.mp3'));
+        soundFavorite.current = sound;
+      } catch (e) {
+        console.log("Error loading favorite sound", e);
+      }
+      try {
+        const { sound } = await Audio.Sound.createAsync(require('./assets/sound-comment.mp3'));
+        soundComment.current = sound;
+      } catch (e) {
+        console.log("Error loading comment sound", e);
+      }
+    };
+    loadSounds();
+    // Unload sounds on cleanup
+    return () => {
+      if (soundClick.current) soundClick.current.unloadAsync();
+      if (soundPost.current) soundPost.current.unloadAsync();
+      if (soundClaim.current) soundClaim.current.unloadAsync();
+      if (soundFavorite.current) soundFavorite.current.unloadAsync();
+      if (soundComment.current) soundComment.current.unloadAsync();
+    };
+  }, []);
+
+  // Splash screen timeout
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Reset profile edit state when leaving profile screen
+  useEffect(() => {
+    if (activeScreen !== 'profile') {
+      setEditingProfile(false);
+      setPendingName(currentUser.name);
+    }
+  }, [activeScreen]);
+
+  // Theme colors
+  const brandColor = "#FB8C00"; // brand accent color (orange)
+  const backgroundColor = isDark ? "#000" : "#fff";
+  const textColor = isDark ? "#fff" : "#000";
+  const secondaryTextColor = isDark ? "#aaaaaa" : "#555555";
+  const cardColor = isDark ? "#1e1e1e" : "#f9f9f9";
+  const borderColor = isDark ? "#333" : "#ddd";
+  const placeholderTextColor = isDark ? "#888" : "#aaa";
+
+  // Action handlers
+  const handlePressCard = (postId) => {
+    // Play click sound and open detail view
+    if (soundClick.current) soundClick.current.replayAsync();
+    setSelectedPostId(postId);
+  };
+  const handleToggleFavorite = (postId) => {
+    setPosts(prevPosts =>
+      prevPosts.map(post =>
+        post.id === postId ? { ...post, isFavorite: !post.isFavorite } : post
+      )
+    );
+    if (soundFavorite.current) soundFavorite.current.replayAsync();
+  };
+  const handleClaimPost = (postId) => {
+    setPosts(prevPosts =>
+      prevPosts.map(post => {
+        if (post.id === postId && !post.isClaimed) {
+          return { ...post, isClaimed: true, claimedBy: currentUser.name };
+        }
+        return post;
+      })
+    );
+    if (soundClaim.current) soundClaim.current.replayAsync();
+  };
+  const handleAddNewPost = () => {
+    if (!newPostTitle.trim()) {
+      // Require a title for the meal
+      return;
+    }
+    const newId = posts.length ? Math.max(...posts.map(p => p.id)) + 1 : 1;
+    const newPost = {
+      id: newId,
+      title: newPostTitle.trim(),
+      description: newPostDesc.trim(),
+      image: null,
+      user: currentUser.name,
+      isFavorite: false,
+      isClaimed: false,
+      claimedBy: null,
+      comments: []
+    };
+    setPosts(prevPosts => [newPost, ...prevPosts]);
+    // Reset form and close modal
+    setNewPostTitle("");
+    setNewPostDesc("");
+    setNewPostOpen(false);
+    // If user was on profile or map, navigate to home to see new post
+    setActiveScreen('home');
+    if (soundPost.current) soundPost.current.replayAsync();
+  };
+  const handleAddComment = () => {
+    if (!commentText.trim() || selectedPostId == null) return;
+    setPosts(prevPosts =>
+      prevPosts.map(post => {
+        if (post.id === selectedPostId) {
+          const updatedComments = [...post.comments, { user: currentUser.name, text: commentText.trim() }];
+          return { ...post, comments: updatedComments };
+        }
+        return post;
+      })
+    );
+    setCommentText("");
+    if (soundComment.current) soundComment.current.replayAsync();
+  };
+  const handleSaveProfile = () => {
+    const oldName = currentUser.name;
+    const nameTrimmed = pendingName.trim();
+    if (nameTrimmed.length === 0) {
+      // Don't allow empty name, keep old and just exit edit mode
+      setPendingName(currentUser.name);
+      setEditingProfile(false);
+      return;
+    }
+    setCurrentUser(prev => ({ ...prev, name: nameTrimmed }));
+    // Also update any post by current user to reflect new name
+    setPosts(prevPosts =>
+      prevPosts.map(post =>
+        post.user === oldName ? { ...post, user: nameTrimmed } : post
+      )
+    );
+    setEditingProfile(false);
+  };
+
+  // Sub-components defined inside App to access state
+  const PostCard = ({ post }) => {
+    return (
+      <View style={[styles.card, { backgroundColor: cardColor, borderColor }]}>
+        {/* Pressable area for opening detail (cover image + text area) */}
+        <Pressable onPress={() => handlePressCard(post.id)} style={{ flex: 1 }}>
+          {post.image ? (
+            <Image source={{ uri: post.image }} style={styles.cardImage} resizeMode="cover" />
+          ) : null}
+          <View style={styles.cardContent}>
+            <Text style={[styles.cardTitle, { color: textColor }]} numberOfLines={1}>
+              {post.title}
+            </Text>
+            {post.description ? (
+              <Text style={[styles.cardDescription, { color: secondaryTextColor }]} numberOfLines={1}>
+                {post.description}
+              </Text>
+            ) : null}
+            <View style={styles.cardFooter}>
+              <Text style={[styles.cardUser, { color: secondaryTextColor }]}>{post.user}</Text>
+              <Pressable onPress={() => handleToggleFavorite(post.id)} style={styles.cardFavorite}>
+                <Ionicons
+                  name={post.isFavorite ? "heart" : "heart-outline"}
+                  size={20}
+                  color={post.isFavorite ? "#ff4444" : secondaryTextColor}
+                />
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </View>
+    );
+  };
+
+  const ProfileScreen = () => {
+    // Derive favorites list
+    const favoritePosts = posts.filter(p => p.isFavorite);
+    return (
+      <View style={{ flex: 1, backgroundColor }}>
+        {/* Profile header section */}
+        <View style={styles.profileHeader}>
+          {/* Avatar */}
+          {currentUser.avatar ? (
+            <Image source={{ uri: currentUser.avatar }} style={[styles.profileAvatar, styles.profileAvatarImage]} />
+          ) : (
+            <Ionicons name="person-circle" size={80} color={brandColor} style={styles.profileAvatar} />
+          )}
+          {/* Name and edit */}
+          {editingProfile ? (
+            <View style={styles.nameEditRow}>
+              <TextInput
+                style={[styles.nameInput, { color: textColor, borderColor }]}
+                value={pendingName}
+                onChangeText={setPendingName}
+                placeholder="Your name"
+                placeholderTextColor={placeholderTextColor}
+              />
+              <Pressable onPress={handleSaveProfile} style={styles.saveButton}>
+                <Text style={styles.saveButtonText}>Save</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.nameEditRow}>
+              <Text style={[styles.profileName, { color: textColor }]}>{currentUser.name}</Text>
+              <Pressable onPress={() => { setEditingProfile(true); setPendingName(currentUser.name); }} style={styles.editButton}>
+                <Ionicons name="create-outline" size={20} color={brandColor} />
+              </Pressable>
+            </View>
+          )}
+          {/* Dark mode toggle */}
+          <View style={styles.darkModeRow}>
+            <Text style={[styles.darkModeLabel, { color: textColor }]}>Dark Mode</Text>
+            <Switch
+              value={isDark}
+              onValueChange={(val) => setIsDark(val)}
+              trackColor={{ false: "#767577", true: brandColor }}
+              thumbColor={isDark ? "#f4f3f4" : "#f4f3f4"}
+            />
+          </View>
+        </View>
+        {/* Favorites list */}
+        <View style={{ flex: 1, paddingHorizontal: 16, paddingBottom: 16 }}>
+          <Text style={[styles.sectionTitle, { color: textColor, marginBottom: 8 }]}>Your Favorites</Text>
+          {favoritePosts.length === 0 ? (
+            <Text style={[styles.noFavoritesText, { color: secondaryTextColor }]}>You have no favorite meals yet.</Text>
+          ) : (
+            <FlatList
+              data={favoritePosts}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={({ item }) => <PostCard post={item} />}
+              ListFooterComponent={<View style={{ height: 16 }} />}
+            />
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  const MapScreen = () => {
+    // Mock markers data
+    const markers = [
+      { id: 'm1', label: "Alice - Pasta", topPerc: 0.3, leftPerc: 0.25 },
+      { id: 'm2', label: "Bob - Tacos", topPerc: 0.6, leftPerc: 0.5 },
+      { id: 'm3', label: "Cara - Curry", topPerc: 0.4, leftPerc: 0.8 }
+    ];
+    return (
+      <View style={{ flex: 1, backgroundColor: isDark ? "#222" : "#e6e6e6", position: 'relative' }}>
+        {/* Simple mock map area (colored background with markers) */}
+        {markers.map(marker => (
+          <View
+            key={marker.id}
+            style={[
+              styles.markerContainer,
+              { top: `${marker.topPerc * 100}%`, left: `${marker.leftPerc * 100}%` }
+            ]}
+          >
+            <Ionicons name="location-sharp" size={32} color={brandColor} style={{ textAlign: 'center' }} />
+            <Text style={[styles.markerLabel, { color: textColor }]}>{marker.label}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  // Show splash screen while loading
+  if (showSplash) {
+    return (
+      <View style={styles.splashContainer}>
+        {/* Splash Image (full screen) */}
+        <Image
+          source={require('./assets/splash.png')}
+          style={styles.splashImage}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
+
+  // Main app UI
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor }]}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: borderColor, backgroundColor }]}>
+        {/* Left header icon (profile or back) */}
+        {activeScreen === 'home' ? (
+          <Pressable onPress={() => setActiveScreen('profile')} style={styles.headerIcon}>
+            <Ionicons name="person-circle-outline" size={28} color={brandColor} />
+          </Pressable>
+        ) : (
+          <Pressable onPress={() => setActiveScreen('home')} style={styles.headerIcon}>
+            <Ionicons name="chevron-back" size={28} color={brandColor} />
+          </Pressable>
+        )}
+        {/* Title */}
+        <Text style={[styles.headerTitle, { color: textColor }]}>What's Cooking</Text>
+        {/* Right header icons */}
+        <View style={styles.headerRight}>
+          <Pressable onPress={() => setNewPostOpen(true)} style={styles.headerIcon}>
+            <Ionicons name="add-circle-outline" size={28} color={brandColor} />
+          </Pressable>
+          {activeScreen !== 'map' ? (
+            <Pressable onPress={() => setActiveScreen('map')} style={styles.headerIcon}>
+              <Ionicons name="map-outline" size={26} color={brandColor} />
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => setActiveScreen('profile')} style={styles.headerIcon}>
+              <Ionicons name="person-circle-outline" size={26} color={brandColor} />
+            </Pressable>
+          )}
+        </View>
+      </View>
+
+      {/* Screen content */}
+      {activeScreen === 'home' && (
+        <FlatList
+          data={posts}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={({ item }) => <PostCard post={item} />}
+          contentContainerStyle={{ padding: 16 }}
+        />
+      )}
+      {activeScreen === 'profile' && <ProfileScreen />}
+      {activeScreen === 'map' && <MapScreen />}
+
+      {/* New Post Modal */}
+      <Modal visible={newPostOpen} animationType="slide">
+        <View style={[styles.modalContainer, { backgroundColor }]}>
+          <Text style={[styles.modalTitle, { color: textColor }]}>Add New Meal</Text>
+          <TextInput
+            style={[styles.input, { color: textColor, borderColor, backgroundColor: cardColor }]}
+            placeholder="Meal title"
+            placeholderTextColor={placeholderTextColor}
+            value={newPostTitle}
+            onChangeText={setNewPostTitle}
+          />
+          <TextInput
+            style={[styles.textarea, { color: textColor, borderColor, backgroundColor: cardColor }]}
+            placeholder="Description (optional)"
+            placeholderTextColor={placeholderTextColor}
+            multiline
+            value={newPostDesc}
+            onChangeText={setNewPostDesc}
+          />
+          <View style={styles.modalButtons}>
+            <Pressable onPress={() => { setNewPostOpen(false); setNewPostTitle(""); setNewPostDesc(""); }} style={styles.cancelButton}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={handleAddNewPost} style={styles.addButton}>
+              <Text style={styles.addButtonText}>Post</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Post Detail Modal */}
+      <Modal visible={selectedPostId != null} animationType="slide">
+        {selectedPostId != null && (
+          <View style={[styles.detailContainer, { backgroundColor }]}>
+            {/* Detail header with back button */}
+            <View style={styles.detailHeader}>
+              <Pressable onPress={() => setSelectedPostId(null)} style={styles.detailBack}>
+                <Ionicons name="chevron-back" size={28} color={brandColor} />
+                <Text style={[styles.backText, { color: brandColor }]}>Back</Text>
+              </Pressable>
+            </View>
+            {/* Detail content */}
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+              {posts.filter(p => p.id === selectedPostId).map(post => (
+                <View key={post.id}>
+                  <Text style={[styles.postTitle, { color: textColor }]}>{post.title}</Text>
+                  <Text style={[styles.postUser, { color: secondaryTextColor }]}>Posted by {post.user}</Text>
+                  {post.image && (
+                    <Image source={{ uri: post.image }} style={styles.postImage} resizeMode="cover" />
+                  )}
+                  <Text style={[styles.postDescription, { color: textColor }]}>
+                    {post.description || "No description provided."}
+                  </Text>
+                  {/* Actions: Claim and Favorite */}
+                  <View style={styles.detailActions}>
+                    {post.user !== currentUser.name && !post.isClaimed && (
+                      <Pressable onPress={() => handleClaimPost(post.id)} style={styles.claimButton}>
+                        <Text style={[styles.claimButtonText, { color: brandColor }]}>Claim</Text>
+                      </Pressable>
+                    )}
+                    {post.isClaimed && (
+                      <Text style={[styles.claimedLabel, { color: brandColor }]}>
+                        Claimed by {post.claimedBy === currentUser.name ? "you" : post.claimedBy}
+                      </Text>
+                    )}
+                    <Pressable onPress={() => handleToggleFavorite(post.id)} style={styles.favoriteButton}>
+                      <Ionicons
+                        name={post.isFavorite ? "heart" : "heart-outline"}
+                        size={24}
+                        color={post.isFavorite ? "#ff4444" : textColor}
+                      />
+                    </Pressable>
+                  </View>
+                  {/* Comments section */}
+                  <Text style={[styles.sectionTitle, { color: textColor, marginTop: 16 }]}>Comments</Text>
+                  {post.comments.length > 0 ? (
+                    post.comments.map((c, index) => (
+                      <Text key={index} style={[styles.commentText, { color: textColor }]}>
+                        <Text style={{ fontWeight: 'bold' }}>{c.user}: </Text>
+                        {c.text}
+                      </Text>
+                    ))
+                  ) : (
+                    <Text style={[styles.noCommentsText, { color: secondaryTextColor }]}>No comments yet.</Text>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+            {/* Comment input bar */}
+            <View style={[styles.commentInputContainer, { borderTopColor: borderColor, backgroundColor }]}>
+              <TextInput
+                style={[styles.commentInput, { color: textColor, backgroundColor: cardColor }]}
+                placeholder="Write a comment..."
+                placeholderTextColor={placeholderTextColor}
+                value={commentText}
+                onChangeText={setCommentText}
+              />
+              <Pressable onPress={handleAddComment} style={styles.sendButton}>
+                <Ionicons name="send" size={24} color={brandColor} />
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+// Styles
+const styles = StyleSheet.create({
+  container: {
+    flex: 1
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  headerIcon: {
+    padding: 4,
+    marginHorizontal: 4
+  },
+  // Splash screen styles
+  splashContainer: {
+    flex: 1,
+    backgroundColor: '#FFF5E1',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  splashImage: {
+    width: '80%',
+    height: '80%'
+  },
+  // Card (Post) styles
+  card: {
+    borderWidth: 1,
+    borderRadius: 8,
+    marginBottom: 16,
+    overflow: 'hidden'
+  },
+  cardImage: {
+    width: '100%',
+    height: 180
+  },
+  cardContent: {
+    padding: 8
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4
+  },
+  cardDescription: {
+    fontSize: 14,
+    marginBottom: 4
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  cardUser: {
+    fontSize: 13,
+    fontStyle: 'italic'
+  },
+  cardFavorite: {
+    padding: 4
+  },
+  // Profile screen styles
+  profileHeader: {
+    padding: 16,
+    alignItems: 'center'
+  },
+  profileAvatar: {
+    marginBottom: 12
+  },
+  profileAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40
+  },
+  nameEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  nameInput: {
+    fontSize: 18,
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 8,
+    flex: 1
+  },
+  editButton: {
+    padding: 4
+  },
+  saveButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#2196F3',
+    borderRadius: 4
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: 'bold'
+  },
+  darkModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  darkModeLabel: {
+    fontSize: 16,
+    marginRight: 8
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
+  noFavoritesText: {
+    fontSize: 14,
+    fontStyle: 'italic'
+  },
+  // Map screen styles
+  markerContainer: {
+    position: 'absolute',
+    alignItems: 'center'
+  },
+  markerLabel: {
+    fontSize: 12,
+    marginTop: 2,
+    textAlign: 'center'
+  },
+  // Modal & form styles
+  modalContainer: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center'
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 24
+  },
+  input: {
+    fontSize: 16,
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 12
+  },
+  textarea: {
+    fontSize: 16,
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    height: 80,
+    marginBottom: 12,
+    textAlignVertical: 'top'
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8
+  },
+  cancelButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#aaa',
+    borderRadius: 4
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontWeight: '600'
+  },
+  addButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#28a745',
+    borderRadius: 4
+  },
+  addButtonText: {
+    color: '#fff',
+    fontWeight: '600'
+  },
+  // Detail screen styles
+  detailContainer: {
+    flex: 1
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    paddingTop: 20
+  },
+  detailBack: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  backText: {
+    fontSize: 16,
+    marginLeft: 4
+  },
+  postTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 4
+  },
+  postUser: {
+    fontSize: 14,
+    marginBottom: 8,
+    fontStyle: 'italic'
+  },
+  postImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 4,
+    marginBottom: 8
+  },
+  postDescription: {
+    fontSize: 16,
+    marginBottom: 16
+  },
+  detailActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  claimButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FB8C00',
+    marginRight: 8
+  },
+  claimButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold'
+  },
+  claimedLabel: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    marginRight: 8
+  },
+  favoriteButton: {
+    marginLeft: 'auto',
+    padding: 4
+  },
+  commentText: {
+    fontSize: 14,
+    marginBottom: 4
+  },
+  noCommentsText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    marginBottom: 8
+  },
+  commentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    padding: 8
+  },
+  commentInput: {
+    flex: 1,
+    fontSize: 15,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8
+  },
+  sendButton: {
+    padding: 8
+  }
+});
