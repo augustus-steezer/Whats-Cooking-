@@ -1,32 +1,44 @@
 // Note: Ensure the following assets are added to the project:
 // - Splash image at path: assets/splash.png
-// - Camera cartoon at path: assets/camera-cartoon.png
 // - Sound effect files at paths: assets/sound-click.mp3, assets/sound-post.mp3,
 //   assets/sound-claim.mp3, assets/sound-favorite.mp3, assets/sound-comment.mp3
+// These should be placed in an 'assets' folder in the project directory.
 
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Image, TextInput, FlatList, ScrollView, Pressable, Switch, SafeAreaView, Modal, useColorScheme, Platform } from 'react-native';
+import { StyleSheet, Text, View, Image, TextInput, FlatList, ScrollView, Pressable, Switch, SafeAreaView, Modal, useColorScheme } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
-
-// Import your camera cartoon
-import cameraCartoon from './assets/camera-cartoon.png';
 
 export default function App() {
   // Theme and appearance
   const systemColorScheme = useColorScheme();
   const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
+  // Splash screen state
   const [showSplash, setShowSplash] = useState(true);
+  // Navigation state
   const [activeScreen, setActiveScreen] = useState('home');
+  // Current user profile
   const [currentUser, setCurrentUser] = useState({ name: 'John Doe', avatar: null });
+  // Image for new post
+  const [newPostImage, setNewPostImage] = useState(null);
 
-  // Community management
-  const [communities, setCommunities] = useState(['All', 'Capitol Towers', 'Downtown']);
-  const [selectedCommunity, setSelectedCommunity] = useState('All');
-  const [newCommunityName, setNewCommunityName] = useState('');
+  // Request permissions for camera and media library
+  useEffect(() => {
+    (async () => {
+      await ImagePicker.requestCameraPermissionsAsync();
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    })();
+  }, []);
 
-  // Posts data
+  // ⏰ TIMER: add live ticking time
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Posts data (feed) -- ⏰ TIMER: add claimDeadline to each post
   const [posts, setPosts] = useState([
     {
       id: 1,
@@ -34,14 +46,13 @@ export default function App() {
       description: "Classic Italian pasta with clams, garlic, and parsley.",
       image: "https://upload.wikimedia.org/wikipedia/commons/7/70/Spaghetti_alle_vongole.jpg",
       user: "Alice",
+      claimDeadline: Date.now() + 3600 * 1000,
       isFavorite: false,
       isClaimed: false,
       claimedBy: null,
-      comments: [{ user: "Bob", text: "Looks delicious!" }],
-      chat: [],
-      community: "Capitol Towers",
-      servings: "3",
-      price: "4"
+      comments: [
+        { user: "Bob", text: "Looks delicious!" }
+      ]
     },
     {
       id: 2,
@@ -49,14 +60,11 @@ export default function App() {
       description: "Cheesy home-baked pizza with fresh basil.",
       image: "https://upload.wikimedia.org/wikipedia/commons/4/46/Pizza_finished.jpg",
       user: "Charlie",
+      claimDeadline: Date.now() + 1800 * 1000,
       isFavorite: false,
       isClaimed: true,
       claimedBy: "Eve",
-      comments: [],
-      chat: [],
-      community: "Downtown",
-      servings: "2",
-      price: "5"
+      comments: []
     },
     {
       id: 3,
@@ -64,29 +72,19 @@ export default function App() {
       description: "A fresh mixed salad with seasonal vegetables.",
       image: null,
       user: "John Doe",
+      claimDeadline: Date.now() + 5400 * 1000,
       isFavorite: false,
       isClaimed: false,
       claimedBy: null,
-      comments: [],
-      chat: [],
-      community: "Capitol Towers",
-      servings: "1",
-      price: "2"
+      comments: []
     }
   ]);
   // Modal states
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [newPostOpen, setNewPostOpen] = useState(false);
-  const [showChatModal, setShowChatModal] = useState(false);
   // New post form state
   const [newPostTitle, setNewPostTitle] = useState("");
   const [newPostDesc, setNewPostDesc] = useState("");
-  const [newPostImage, setNewPostImage] = useState(null);
-  const [newPostCommunity, setNewPostCommunity] = useState(communities[1] || "");
-  const [newPostServings, setNewPostServings] = useState("");
-  const [newPostPrice, setNewPostPrice] = useState("");
-  // Chat state
-  const [chatText, setChatText] = useState("");
   // Comment input state (for detail screen)
   const [commentText, setCommentText] = useState("");
   // Profile editing state
@@ -106,23 +104,23 @@ export default function App() {
       try {
         const { sound } = await Audio.Sound.createAsync(require('./assets/sound-click.mp3'));
         soundClick.current = sound;
-      } catch (e) {}
+      } catch (e) { }
       try {
         const { sound } = await Audio.Sound.createAsync(require('./assets/sound-post.mp3'));
         soundPost.current = sound;
-      } catch (e) {}
+      } catch (e) { }
       try {
         const { sound } = await Audio.Sound.createAsync(require('./assets/sound-claim.mp3'));
         soundClaim.current = sound;
-      } catch (e) {}
+      } catch (e) { }
       try {
         const { sound } = await Audio.Sound.createAsync(require('./assets/sound-favorite.mp3'));
         soundFavorite.current = sound;
-      } catch (e) {}
+      } catch (e) { }
       try {
         const { sound } = await Audio.Sound.createAsync(require('./assets/sound-comment.mp3'));
         soundComment.current = sound;
-      } catch (e) {}
+      } catch (e) { }
     };
     loadSounds();
     return () => {
@@ -136,7 +134,9 @@ export default function App() {
 
   // Splash screen timeout
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2500);
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2500);
     return () => clearTimeout(timer);
   }, []);
 
@@ -156,6 +156,39 @@ export default function App() {
   const cardColor = isDark ? "#1e1e1e" : "#f9f9f9";
   const borderColor = isDark ? "#333" : "#ddd";
   const placeholderTextColor = isDark ? "#888" : "#aaa";
+
+  // ⏰ TIMER: Helper for formatting time left
+  function formatTimeLeft(deadline) {
+    if (!deadline) return "";
+    const totalSec = Math.max(0, Math.floor((deadline - currentTime) / 1000));
+    if (totalSec <= 0) return "Time's up!";
+    const hrs = Math.floor(totalSec / 3600);
+    const min = Math.floor((totalSec % 3600) / 60);
+    const sec = totalSec % 60;
+    return `${hrs > 0 ? `${hrs}h ` : ''}${min}m ${sec < 10 ? '0' : ''}${sec}s`;
+  }
+
+  // --- IMAGE PICKING FUNCTIONS ---
+  const handlePickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      setNewPostImage(result.assets[0].uri);
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    let result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      setNewPostImage(result.assets[0].uri);
+    }
+  };
 
   // Action handlers
   const handlePressCard = (postId) => {
@@ -181,30 +214,6 @@ export default function App() {
     );
     if (soundClaim.current) soundClaim.current.replayAsync();
   };
-
-  // Image picker (only camera)
-  const handleTakePhoto = async () => {
-    let result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      quality: 0.7,
-    });
-    if (!result.canceled) {
-      setNewPostImage(result.assets[0].uri);
-    }
-  };
-
-  // Community create
-  const handleAddCommunity = () => {
-    if (
-      newCommunityName.trim() &&
-      !communities.includes(newCommunityName.trim())
-    ) {
-      setCommunities(prev => [...prev, newCommunityName.trim()]);
-      setNewCommunityName("");
-    }
-  };
-
-  // New post logic
   const handleAddNewPost = () => {
     if (!newPostTitle.trim()) return;
     const newId = posts.length ? Math.max(...posts.map(p => p.id)) + 1 : 1;
@@ -214,42 +223,20 @@ export default function App() {
       description: newPostDesc.trim(),
       image: newPostImage,
       user: currentUser.name,
+      claimDeadline: Date.now() + 3600 * 1000,
       isFavorite: false,
       isClaimed: false,
       claimedBy: null,
-      comments: [],
-      chat: [],
-      community: newPostCommunity,
-      servings: newPostServings,
-      price: newPostPrice
+      comments: []
     };
     setPosts(prevPosts => [newPost, ...prevPosts]);
     setNewPostTitle("");
     setNewPostDesc("");
     setNewPostImage(null);
-    setNewPostCommunity(communities[1] || "");
-    setNewPostServings("");
-    setNewPostPrice("");
     setNewPostOpen(false);
     setActiveScreen('home');
     if (soundPost.current) soundPost.current.replayAsync();
   };
-
-  // Chat
-  const handleSendChat = () => {
-    if (!chatText.trim() || selectedPostId == null) return;
-    setPosts(prevPosts =>
-      prevPosts.map(post => {
-        if (post.id === selectedPostId) {
-          const updatedChat = [...(post.chat || []), { user: currentUser.name, text: chatText.trim(), time: Date.now() }];
-          return { ...post, chat: updatedChat };
-        }
-        return post;
-      })
-    );
-    setChatText("");
-  };
-
   const handleAddComment = () => {
     if (!commentText.trim() || selectedPostId == null) return;
     setPosts(prevPosts =>
@@ -264,7 +251,6 @@ export default function App() {
     setCommentText("");
     if (soundComment.current) soundComment.current.replayAsync();
   };
-
   const handleSaveProfile = () => {
     const oldName = currentUser.name;
     const nameTrimmed = pendingName.trim();
@@ -284,7 +270,6 @@ export default function App() {
 
   // Sub-components defined inside App to access state
   const PostCard = ({ post }) => {
-    const showChatButton = post.isClaimed && (currentUser.name === post.user || currentUser.name === post.claimedBy);
     return (
       <View style={[styles.card, { backgroundColor: cardColor, borderColor }]}>
         <Pressable onPress={() => handlePressCard(post.id)} style={{ flex: 1 }}>
@@ -295,15 +280,17 @@ export default function App() {
             <Text style={[styles.cardTitle, { color: textColor }]} numberOfLines={1}>
               {post.title}
             </Text>
-            <Text style={[styles.cardDescription, { color: secondaryTextColor }]} numberOfLines={1}>
-              {post.description}
-            </Text>
-            <Text style={{ color: secondaryTextColor, marginBottom: 2, fontSize: 13 }}>
-              Servings: {post.servings || '-'} | Price: {post.price ? `$${post.price}` : '-'}
-            </Text>
-            <Text style={{ color: secondaryTextColor, fontSize: 13, fontStyle: 'italic' }}>
-              {post.community}
-            </Text>
+            {/* ⏰ TIMER: clock added below the title */}
+            {post.claimDeadline && (
+              <Text style={[styles.timerText, { color: secondaryTextColor }]}>
+                ⏰ {formatTimeLeft(post.claimDeadline)}
+              </Text>
+            )}
+            {post.description ? (
+              <Text style={[styles.cardDescription, { color: secondaryTextColor }]} numberOfLines={1}>
+                {post.description}
+              </Text>
+            ) : null}
             <View style={styles.cardFooter}>
               <Text style={[styles.cardUser, { color: secondaryTextColor }]}>{post.user}</Text>
               <Pressable onPress={() => handleToggleFavorite(post.id)} style={styles.cardFavorite}>
@@ -313,12 +300,6 @@ export default function App() {
                   color={post.isFavorite ? "#ff4444" : secondaryTextColor}
                 />
               </Pressable>
-              {showChatButton && (
-                <Pressable onPress={() => { setSelectedPostId(post.id); setShowChatModal(true); }} style={styles.chatButton}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={20} color={brandColor} />
-                  <Text style={[styles.chatButtonText, { color: brandColor }]}>Chat</Text>
-                </Pressable>
-              )}
             </View>
           </View>
         </Pressable>
@@ -326,7 +307,6 @@ export default function App() {
     );
   };
 
-  // ---- Profile Screen ----
   const ProfileScreen = () => {
     const favoritePosts = posts.filter(p => p.isFavorite);
     return (
@@ -367,44 +347,6 @@ export default function App() {
               thumbColor={isDark ? "#f4f3f4" : "#f4f3f4"}
             />
           </View>
-
-          {/* --- Community Tab and Add Button --- */}
-          <View style={{ width: '100%', marginTop: 12 }}>
-            <Text style={{ fontWeight: 'bold', color: textColor, marginBottom: 6 }}>Communities</Text>
-            <FlatList
-              data={communities}
-              horizontal
-              keyExtractor={item => item}
-              renderItem={({ item }) => (
-                <View style={{ marginRight: 8 }}>
-                  <Text style={{ color: textColor, fontSize: 14 }}>{item}</Text>
-                </View>
-              )}
-              style={{ marginBottom: 8 }}
-            />
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="New community name"
-                value={newCommunityName}
-                onChangeText={setNewCommunityName}
-                placeholderTextColor={placeholderTextColor}
-              />
-              <Pressable
-                style={[styles.addButton, { marginLeft: 6 }]}
-                onPress={handleAddCommunity}>
-                <Text style={styles.addButtonText}>Add</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {/* --- Map Button in Profile --- */}
-          <View style={{ marginTop: 12, alignItems: 'flex-start', width: '100%' }}>
-            <Pressable onPress={() => setActiveScreen('map')} style={styles.profileSubButton}>
-              <Ionicons name="map-outline" size={22} color={brandColor} />
-              <Text style={{ marginLeft: 6, color: brandColor }}>Community Map</Text>
-            </Pressable>
-          </View>
         </View>
         <View style={{ flex: 1, paddingHorizontal: 16, paddingBottom: 16 }}>
           <Text style={[styles.sectionTitle, { color: textColor, marginBottom: 8 }]}>Your Favorites</Text>
@@ -423,7 +365,6 @@ export default function App() {
     );
   };
 
-  // ---- Map Screen ----
   const MapScreen = () => {
     const markers = [
       { id: 'm1', label: "Alice - Pasta", topPerc: 0.3, leftPerc: 0.25 },
@@ -448,12 +389,6 @@ export default function App() {
     );
   };
 
-  // ---- Filtered Posts for Community ----
-  const filteredPosts = selectedCommunity === 'All'
-    ? posts
-    : posts.filter(p => p.community === selectedCommunity);
-
-  // ---- Splash screen ----
   if (showSplash) {
     return (
       <View style={styles.splashContainer}>
@@ -468,7 +403,6 @@ export default function App() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]}>
-      {/* Header */}
       <View style={[styles.header, { borderBottomColor: borderColor, backgroundColor }]}>
         {activeScreen === 'home' ? (
           <Pressable onPress={() => setActiveScreen('profile')} style={styles.headerIcon}>
@@ -481,52 +415,32 @@ export default function App() {
         )}
         <Pressable
           onPress={() => setActiveScreen('home')}
-          style={{ flex: 1, alignItems: 'center' }}>
+          style={{ flex: 1, alignItems: 'center' }}
+        >
           <Text style={[styles.headerTitle, { color: textColor }]}>
-            What's Cooking?
+            What's Cooking
           </Text>
         </Pressable>
         <View style={styles.headerRight}>
           <Pressable onPress={() => setNewPostOpen(true)} style={styles.headerIcon}>
             <Ionicons name="add-circle-outline" size={28} color={brandColor} />
           </Pressable>
-          {/* Map icon is removed from here */}
+          {activeScreen !== 'map' ? (
+            <Pressable onPress={() => setActiveScreen('map')} style={styles.headerIcon}>
+              <Ionicons name="map-outline" size={26} color={brandColor} />
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => setActiveScreen('profile')} style={styles.headerIcon}>
+              <Ionicons name="person-circle-outline" size={26} color={brandColor} />
+            </Pressable>
+          )}
         </View>
       </View>
 
-      {/* --- Community Filter on Feed --- */}
-      {activeScreen === 'home' && (
-        <View style={{ marginTop: 10 }}>
-          <FlatList
-            data={communities}
-            horizontal
-            keyExtractor={item => item}
-            renderItem={({ item }) => (
-              <Pressable
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: 20,
-                  borderWidth: 1,
-                  borderColor: item === selectedCommunity ? brandColor : borderColor,
-                  backgroundColor: item === selectedCommunity ? brandColor : 'transparent',
-                  marginRight: 8,
-                }}
-                onPress={() => setSelectedCommunity(item)}
-              >
-                <Text style={{ color: item === selectedCommunity ? '#fff' : textColor }}>{item}</Text>
-              </Pressable>
-            )}
-            style={{ marginBottom: 8, marginLeft: 10 }}
-            showsHorizontalScrollIndicator={false}
-          />
-        </View>
-      )}
-
-      {/* Main Content */}
+      {/* Screen content */}
       {activeScreen === 'home' && (
         <FlatList
-          data={filteredPosts}
+          data={posts}
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item }) => <PostCard post={item} />}
           contentContainerStyle={{ padding: 16 }}
@@ -535,104 +449,60 @@ export default function App() {
       {activeScreen === 'profile' && <ProfileScreen />}
       {activeScreen === 'map' && <MapScreen />}
 
-      {/* --- New Post Modal --- */}
+      {/* New Post Modal */}
       <Modal visible={newPostOpen} animationType="slide">
-        <ScrollView style={{ flex: 1, backgroundColor }}>
-          <View style={[styles.modalContainer, { backgroundColor }]}>
-            <Text style={[styles.modalTitle, { color: textColor }]}>Add New Meal</Text>
-            {/* --- Community Picker --- */}
-            <Text style={{ color: textColor, fontSize: 15, marginBottom: 3, fontWeight: '600' }}>Community</Text>
-            <FlatList
-              data={communities.filter(c => c !== "All")}
-              horizontal
-              keyExtractor={item => item}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 20,
-                    borderWidth: 1,
-                    borderColor: item === newPostCommunity ? brandColor : borderColor,
-                    backgroundColor: item === newPostCommunity ? brandColor : 'transparent',
-                    marginRight: 8,
-                  }}
-                  onPress={() => setNewPostCommunity(item)}
-                >
-                  <Text style={{ color: item === newPostCommunity ? '#fff' : textColor }}>{item}</Text>
-                </Pressable>
-              )}
-              style={{ marginBottom: 8, marginLeft: 0 }}
-              showsHorizontalScrollIndicator={false}
+        <View style={[styles.modalContainer, { backgroundColor }]}>
+          <Text style={[styles.modalTitle, { color: textColor }]}>Add New Meal</Text>
+          <TextInput
+            style={[styles.input, { color: textColor, borderColor, backgroundColor: cardColor }]}
+            placeholder="Meal title"
+            placeholderTextColor={placeholderTextColor}
+            value={newPostTitle}
+            onChangeText={setNewPostTitle}
+          />
+          <TextInput
+            style={[styles.textarea, { color: textColor, borderColor, backgroundColor: cardColor }]}
+            placeholder="Description (optional)"
+            placeholderTextColor={placeholderTextColor}
+            multiline
+            value={newPostDesc}
+            onChangeText={setNewPostDesc}
+          />
+          {/* Show preview if user picked an image */}
+          {newPostImage && (
+            <Image
+              source={{ uri: newPostImage }}
+              style={{ width: 120, height: 120, alignSelf: 'center', borderRadius: 10, marginBottom: 10 }}
             />
-
-            <TextInput
-              style={[styles.input, { color: textColor, borderColor, backgroundColor: cardColor }]}
-              placeholder="Meal title"
-              placeholderTextColor={placeholderTextColor}
-              value={newPostTitle}
-              onChangeText={setNewPostTitle}
-            />
-            <TextInput
-              style={[styles.textarea, { color: textColor, borderColor, backgroundColor: cardColor }]}
-              placeholder="Description (optional)"
-              placeholderTextColor={placeholderTextColor}
-              multiline
-              value={newPostDesc}
-              onChangeText={setNewPostDesc}
-            />
-            <TextInput
-              style={[styles.input, { color: textColor, borderColor, backgroundColor: cardColor }]}
-              placeholder="Servings"
-              placeholderTextColor={placeholderTextColor}
-              keyboardType="numeric"
-              value={newPostServings}
-              onChangeText={setNewPostServings}
-            />
-            <TextInput
-              style={[styles.input, { color: textColor, borderColor, backgroundColor: cardColor }]}
-              placeholder="Price (e.g. 3 for $3)"
-              placeholderTextColor={placeholderTextColor}
-              keyboardType="numeric"
-              value={newPostPrice}
-              onChangeText={setNewPostPrice}
-            />
-
-            {/* --- Only camera photo --- */}
-            <View style={{ alignItems: 'center', marginVertical: 10 }}>
-              <Pressable onPress={handleTakePhoto} style={{}}>
-                <Image source={cameraCartoon} style={{ width: 48, height: 48 }} />
-              </Pressable>
-            </View>
-            {newPostImage ? (
-              <Image source={{ uri: newPostImage }} style={{ width: 150, height: 100, borderRadius: 8, marginBottom: 8, alignSelf: 'center' }} />
-            ) : null}
-
-            <View style={styles.modalButtons}>
-              <Pressable onPress={() => {
-                setNewPostOpen(false);
-                setNewPostTitle("");
-                setNewPostDesc("");
-                setNewPostImage(null);
-                setNewPostCommunity(communities[1] || "");
-                setNewPostServings("");
-                setNewPostPrice("");
-              }} style={styles.cancelButton}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={handleAddNewPost} style={styles.addButton}>
-                <Text style={styles.addButtonText}>Post</Text>
-              </Pressable>
-            </View>
+          )}
+          {/* Add/Take Photo buttons */}
+          <View style={{ flexDirection: 'row', marginBottom: 12, justifyContent: 'center' }}>
+            <Pressable onPress={handlePickImage} style={styles.imagePickButton}>
+              <Ionicons name="image" size={20} color="#FB8C00" />
+              <Text style={{ marginLeft: 8, color: textColor }}>Add Photo</Text>
+            </Pressable>
+            <View style={{ width: 8 }} />
+            <Pressable onPress={handleTakePhoto} style={styles.imagePickButton}>
+              <Ionicons name="camera" size={20} color="#FB8C00" />
+              <Text style={{ marginLeft: 8, color: textColor }}>Take Photo</Text>
+            </Pressable>
           </View>
-        </ScrollView>
+          <View style={styles.modalButtons}>
+            <Pressable onPress={() => { setNewPostOpen(false); setNewPostTitle(""); setNewPostDesc(""); setNewPostImage(null); }} style={styles.cancelButton}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={handleAddNewPost} style={styles.addButton}>
+              <Text style={styles.addButtonText}>Post</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
 
-      {/* --- Post Detail Modal --- */}
+      {/* Post Detail Modal */}
       <Modal visible={selectedPostId != null} animationType="slide">
         {selectedPostId != null && (
           <View style={[styles.detailContainer, { backgroundColor }]}>
-            <View style={[styles.detailHeader, { paddingTop: Platform.OS === 'ios' ? 40 : 20 }]}>
+            <View style={styles.detailHeader}>
               <Pressable onPress={() => setSelectedPostId(null)} style={styles.detailBack}>
                 <Ionicons name="chevron-back" size={28} color={brandColor} />
                 <Text style={[styles.backText, { color: brandColor }]}>Back</Text>
@@ -642,17 +512,19 @@ export default function App() {
               {posts.filter(p => p.id === selectedPostId).map(post => (
                 <View key={post.id}>
                   <Text style={[styles.postTitle, { color: textColor }]}>{post.title}</Text>
-                  <Text style={[styles.cardDescription, { color: secondaryTextColor }]}>{post.description}</Text>
-                  <Text style={{ color: secondaryTextColor, marginBottom: 2, fontSize: 13 }}>
-                    Servings: {post.servings || '-'} | Price: {post.price ? `$${post.price}` : '-'}
-                  </Text>
-                  <Text style={{ color: secondaryTextColor, fontSize: 13, fontStyle: 'italic' }}>
-                    {post.community}
-                  </Text>
+                  {/* ⏰ TIMER: clock in detail modal */}
+                  {post.claimDeadline && (
+                    <Text style={[styles.timerText, { color: secondaryTextColor }]}>
+                      ⏰ {formatTimeLeft(post.claimDeadline)}
+                    </Text>
+                  )}
                   <Text style={[styles.postUser, { color: secondaryTextColor }]}>Posted by {post.user}</Text>
                   {post.image && (
                     <Image source={{ uri: post.image }} style={styles.postImage} resizeMode="cover" />
                   )}
+                  <Text style={[styles.postDescription, { color: textColor }]}>
+                    {post.description || "No description provided."}
+                  </Text>
                   <View style={styles.detailActions}>
                     {post.user !== currentUser.name && !post.isClaimed && (
                       <Pressable onPress={() => handleClaimPost(post.id)} style={styles.claimButton}>
@@ -671,12 +543,6 @@ export default function App() {
                         color={post.isFavorite ? "#ff4444" : textColor}
                       />
                     </Pressable>
-                    {post.isClaimed && (currentUser.name === post.user || currentUser.name === post.claimedBy) && (
-                      <Pressable onPress={() => { setSelectedPostId(post.id); setShowChatModal(true); }} style={styles.chatButton}>
-                        <Ionicons name="chatbubble-ellipses-outline" size={20} color={brandColor} />
-                        <Text style={[styles.chatButtonText, { color: brandColor }]}>Chat</Text>
-                      </Pressable>
-                    )}
                   </View>
                   <Text style={[styles.sectionTitle, { color: textColor, marginTop: 16 }]}>Comments</Text>
                   {post.comments.length > 0 ? (
@@ -707,53 +573,15 @@ export default function App() {
           </View>
         )}
       </Modal>
-
-      {/* --- Chat Modal --- */}
-      <Modal visible={showChatModal} animationType="slide" transparent={false}>
-        <View style={[styles.modalContainer, { backgroundColor, flex: 1 }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-            <Pressable onPress={() => setShowChatModal(false)} style={styles.detailBack}>
-              <Ionicons name="chevron-back" size={28} color={brandColor} />
-              <Text style={[styles.backText, { color: brandColor }]}>Back</Text>
-            </Pressable>
-            <Text style={[styles.modalTitle, { color: textColor, flex: 1, textAlign: 'center', marginLeft: -28 }]}>Chat</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={{ padding: 8, flexGrow: 1 }}>
-              {selectedPostId != null &&
-                posts.find(p => p.id === selectedPostId)?.chat?.map((msg, i) => (
-                  <View key={i} style={[
-                    styles.chatMsgRow,
-                    msg.user === currentUser.name ? styles.chatMsgSelf : styles.chatMsgOther
-                  ]}>
-                    <Text style={[styles.chatMsgSender, { color: brandColor }]}>{msg.user === currentUser.name ? "You" : msg.user}</Text>
-                    <Text style={[styles.chatMsgText, { color: textColor }]}>{msg.text}</Text>
-                  </View>
-                ))
-              }
-            </ScrollView>
-            <View style={[styles.commentInputContainer, { borderTopColor: borderColor, backgroundColor }]}>
-              <TextInput
-                style={[styles.commentInput, { color: textColor, backgroundColor: cardColor }]}
-                placeholder="Type your message..."
-                placeholderTextColor={placeholderTextColor}
-                value={chatText}
-                onChangeText={setChatText}
-              />
-              <Pressable onPress={handleSendChat} style={styles.sendButton}>
-                <Ionicons name="send" size={24} color={brandColor} />
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
 
 // Styles
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -762,68 +590,291 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1
   },
-  headerTitle: { fontSize: 18, fontWeight: 'bold' },
-  headerRight: { flexDirection: 'row', alignItems: 'center' },
-  headerIcon: { padding: 4, marginHorizontal: 4 },
-  splashContainer: { flex: 1, backgroundColor: '#FFF5E1', justifyContent: 'center', alignItems: 'center' },
-  splashImage: { width: '80%', height: '80%' },
-  card: { borderWidth: 1, borderRadius: 8, marginBottom: 16, overflow: 'hidden' },
-  cardImage: { width: '100%', height: 180 },
-  cardContent: { padding: 8 },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
-  cardDescription: { fontSize: 14, marginBottom: 4 },
-  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardUser: { fontSize: 13, fontStyle: 'italic' },
-  cardFavorite: { padding: 4 },
-  chatButton: { flexDirection: 'row', alignItems: 'center', marginLeft: 8, padding: 4, borderRadius: 6, borderWidth: 1, borderColor: '#FB8C00', backgroundColor: 'transparent' },
-  chatButtonText: { fontSize: 13, marginLeft: 2 },
-  profileHeader: { padding: 16, alignItems: 'center' },
-  profileAvatar: { marginBottom: 12 },
-  profileAvatarImage: { width: 80, height: 80, borderRadius: 40 },
-  nameEditRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  profileName: { fontSize: 18, fontWeight: 'bold' },
-  nameInput: { fontSize: 18, borderWidth: 1, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4, marginRight: 8, flex: 1 },
-  editButton: { padding: 4 },
-  saveButton: { paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#2196F3', borderRadius: 4 },
-  saveButtonText: { color: '#fff', fontWeight: 'bold' },
-  darkModeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  darkModeLabel: { fontSize: 16, marginRight: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold' },
-  noFavoritesText: { fontSize: 14, fontStyle: 'italic' },
-  markerContainer: { position: 'absolute', alignItems: 'center' },
-  markerLabel: { fontSize: 12, marginTop: 2, textAlign: 'center' },
-  modalContainer: { flex: 1, padding: 16, justifyContent: 'center' },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 24 },
-  input: { fontSize: 16, borderWidth: 1, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 6, marginBottom: 12 },
-  textarea: { fontSize: 16, borderWidth: 1, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 6, height: 80, marginBottom: 12, textAlignVertical: 'top' },
-  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  cancelButton: { paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#aaa', borderRadius: 4 },
-  cancelButtonText: { color: '#fff', fontWeight: '600' },
-  addButton: { paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#28a745', borderRadius: 4 },
-  addButtonText: { color: '#fff', fontWeight: '600' },
-  detailContainer: { flex: 1 },
-  detailHeader: { flexDirection: 'row', alignItems: 'center', padding: 12, paddingTop: 30 }, // raised for iOS back button
-  detailBack: { flexDirection: 'row', alignItems: 'center' },
-  backText: { fontSize: 16, marginLeft: 4 },
-  postTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 4 },
-  postUser: { fontSize: 14, marginBottom: 8, fontStyle: 'italic' },
-  postImage: { width: '100%', height: 200, borderRadius: 4, marginBottom: 8 },
-  postDescription: { fontSize: 16, marginBottom: 16 },
-  detailActions: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  claimButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 4, borderWidth: 1, borderColor: '#FB8C00', marginRight: 8 },
-  claimButtonText: { fontSize: 14, fontWeight: 'bold' },
-  claimedLabel: { fontSize: 14, fontStyle: 'italic', marginRight: 8 },
-  favoriteButton: { marginLeft: 'auto', padding: 4 },
-  commentText: { fontSize: 14, marginBottom: 4 },
-  noCommentsText: { fontSize: 14, fontStyle: 'italic', marginBottom: 8 },
-  commentInputContainer: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, padding: 8 },
-  commentInput: { flex: 1, fontSize: 15, borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8 },
-  sendButton: { padding: 8 },
-  profileSubButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, borderColor: '#FB8C00', borderRadius: 8, marginTop: 4 }
-  ,
-  chatMsgRow: { marginBottom: 10, maxWidth: '80%' },
-  chatMsgSelf: { alignSelf: 'flex-end', backgroundColor: '#fbe0be', borderRadius: 12, padding: 8 },
-  chatMsgOther: { alignSelf: 'flex-start', backgroundColor: '#e6e6e6', borderRadius: 12, padding: 8 },
-  chatMsgSender: { fontSize: 12, fontWeight: 'bold' },
-  chatMsgText: { fontSize: 14 }
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  headerIcon: {
+    padding: 4,
+    marginHorizontal: 4
+  },
+  splashContainer: {
+    flex: 1,
+    backgroundColor: '#FFF5E1',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  splashImage: {
+    width: '80%',
+    height: '80%'
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 8,
+    marginBottom: 16,
+    overflow: 'hidden'
+  },
+  cardImage: {
+    width: '100%',
+    height: 180
+  },
+  cardContent: {
+    padding: 8
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4
+  },
+  // ⏰ TIMER: add style for timer text
+  timerText: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    marginBottom: 2,
+  },
+  cardDescription: {
+    fontSize: 14,
+    marginBottom: 4
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  cardUser: {
+    fontSize: 13,
+    fontStyle: 'italic'
+  },
+  cardFavorite: {
+    padding: 4
+  },
+  profileHeader: {
+    padding: 16,
+    alignItems: 'center'
+  },
+  profileAvatar: {
+    marginBottom: 12
+  },
+  profileAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40
+  },
+  nameEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  nameInput: {
+    fontSize: 18,
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 8,
+    flex: 1
+  },
+  editButton: {
+    padding: 4
+  },
+  saveButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#2196F3',
+    borderRadius: 4
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: 'bold'
+  },
+  darkModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  darkModeLabel: {
+    fontSize: 16,
+    marginRight: 8
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
+  noFavoritesText: {
+    fontSize: 14,
+    fontStyle: 'italic'
+  },
+  markerContainer: {
+    position: 'absolute',
+    alignItems: 'center'
+  },
+  markerLabel: {
+    fontSize: 12,
+    marginTop: 2,
+    textAlign: 'center'
+  },
+  modalContainer: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center'
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 24
+  },
+  input: {
+    fontSize: 16,
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 12
+  },
+  textarea: {
+    fontSize: 16,
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    height: 80,
+    marginBottom: 12,
+    textAlignVertical: 'top'
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8
+  },
+  cancelButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#aaa',
+    borderRadius: 4
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontWeight: '600'
+  },
+  addButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#28a745',
+    borderRadius: 4
+  },
+  addButtonText: {
+    color: '#fff',
+    fontWeight: '600'
+  },
+  detailContainer: {
+    flex: 1
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    paddingTop: 20
+  },
+  detailBack: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  backText: {
+    fontSize: 16,
+    marginLeft: 4
+  },
+  postTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 4
+  },
+  postUser: {
+    fontSize: 14,
+    marginBottom: 8,
+    fontStyle: 'italic'
+  },
+  postImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 4,
+    marginBottom: 8
+  },
+  postDescription: {
+    fontSize: 16,
+    marginBottom: 16
+  },
+  detailActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  claimButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FB8C00',
+    marginRight: 8
+  },
+  claimButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold'
+  },
+  claimedLabel: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    marginRight: 8
+  },
+  favoriteButton: {
+    marginLeft: 'auto',
+    padding: 4
+  },
+  commentText: {
+    fontSize: 14,
+    marginBottom: 4
+  },
+  noCommentsText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    marginBottom: 8
+  },
+  commentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    padding: 8
+  },
+  commentInput: {
+    flex: 1,
+    fontSize: 15,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8
+  },
+  sendButton: {
+    padding: 8
+  },
+
+  // --- Image Picker button style ---
+  imagePickButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+    borderColor: '#FB8C00',
+    backgroundColor: 'transparent',
+  }
 });
